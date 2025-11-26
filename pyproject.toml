@@ -1,0 +1,12 @@
+[project]
+name = "nephrology-rag-mcp-tool"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "faiss-cpu>=1.13.0",
+    "fastmcp>=2.13.1",
+    "langchain-community>=0.4.1",
+    "langchain-mistralai>=1.1.0",
+]
