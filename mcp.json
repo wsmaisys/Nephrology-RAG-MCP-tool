@@ -1,0 +1,36 @@
+{
+  "name": "nephrology-rag-mcp",
+  "version": "1.0.0",
+  "description": "Nephrology RAG MCP server for FastMCP.Cloud",
+  "entrypoint": "rag_mcp_server.py",
+  "runtime": {
+    "type": "python",
+    "packageManager": "pip",
+    "requirements": "requirements.txt"
+  },
+  "tools": [
+    {
+      "name": "invoke",
+      "description": "Retrieve top-k relevant document chunks for a query",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string" },
+          "k": { "type": "integer", "default": 4 }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "health",
+      "description": "Return service health and vector store status",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    }
+  ],
+  "models": [],
+  "servers": []
+}
