@@ -21,7 +21,13 @@ _vector_store = None
 _retriever = None
 
 # MCP server instance
-mcp = FastMCP("nephrology-rag-mcp")
+# Try to construct FastMCP without requiring sessions when supported by the
+# installed FastMCP version (some releases enforce session IDs). Fall back to
+# the default constructor if the parameter is not supported.
+try:
+    mcp = FastMCP("nephrology-rag-mcp", require_session=False)
+except TypeError:
+    mcp = FastMCP("nephrology-rag-mcp")
 
 
 def _load_vector_store():
