@@ -21,7 +21,7 @@ _vector_store = None
 _retriever = None
 
 # MCP server instance
-mcp = FastMCP("RAGServer")
+mcp = FastMCP("nephrology-rag-mcp")
 
 
 def _load_vector_store():
