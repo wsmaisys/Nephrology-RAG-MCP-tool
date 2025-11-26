@@ -126,11 +126,13 @@ if __name__ == "__main__":
     print("[RAG MCP] Starting RAG MCP Server...")
     _load_vector_store()
 
-    print("[RAG MCP] Server listening on http://0.0.0.0:8000")
+    # Use PORT env var (default 8000 for local, 8080 for Google Cloud Run)
+    port = int(os.environ.get("PORT", 8000))
+    print(f"[RAG MCP] Server listening on http://0.0.0.0:{port}")
     # Configure request timeout at runtime when supported; otherwise start
     # without it to remain compatible with different FastMCP releases.
     try:
-        mcp.run(transport="http", host="0.0.0.0", port=8000, request_timeout=300)
+        mcp.run(transport="http", host="0.0.0.0", port=port, request_timeout=300)
     except TypeError:
         print("[RAG MCP] FastMCP.run() does not accept 'request_timeout'; starting without it.")
-        mcp.run(transport="http", host="0.0.0.0", port=8000)
+        mcp.run(transport="http", host="0.0.0.0", port=port)
