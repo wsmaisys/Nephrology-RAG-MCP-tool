@@ -1,36 +1,59 @@
 {
-  "name": "nephrology-rag-mcp",
-  "version": "1.0.0",
-  "description": "Nephrology RAG MCP server for FastMCP.Cloud",
-  "entrypoint": "rag_mcp_server.py",
-  "runtime": {
-    "type": "python",
-    "packageManager": "pip",
-    "requirements": "requirements.txt"
-  },
+  "name": "Nephrology RAG MCP",
+  "description": "MCP server providing retrieval-augmented nephrology content.",
+  "version": "0.1.0",
   "tools": [
     {
       "name": "invoke",
-      "description": "Retrieve top-k relevant document chunks for a query",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "query": { "type": "string" },
-          "k": { "type": "integer", "default": 4 }
+      "description": "Retrieve top-k relevant document chunks for a query (semantic search).",
+      "method": "invoke",
+      "params": {
+        "query": {
+          "type": "string",
+          "required": true,
+          "description": "Natural language search query"
         },
-        "required": ["query"]
+        "k": {
+          "type": "integer",
+          "required": false,
+          "default": 4,
+          "description": "Number of results to return"
+        }
+      },
+      "returns": {
+        "type": "object",
+        "description": "Search results with context and metadata"
       }
     },
     {
       "name": "health",
-      "description": "Return service health and vector store status",
-      "parameters": {
+      "description": "Return basic service health and readiness information.",
+      "method": "health",
+      "params": {},
+      "returns": {
         "type": "object",
-        "properties": {},
-        "required": []
+        "description": "Health status and vector store path"
       }
     }
   ],
-  "models": [],
-  "servers": []
+  "manifest": {
+    "mcp_endpoint": "/mcp",
+    "transport": "streamable_http",
+    "accept": ["application/json", "text/event-stream"],
+    "session_handling": [
+      "top-level 'session' field",
+      "params.session",
+      "X-FastMCP-Session header",
+      "session query parameter"
+    ],
+    "auth": {
+      "env_vars": ["MISTRALAI_API_KEY", "MISTRAL_API_KEY", "mistral_api_key"],
+      "notes": "Server expects Mistral API key set as environment variable. Clients should not send raw API keys in requests."
+    }
+  },
+  "contact": {
+    "maintainer": "Wasim Ansari",
+    "email": "wsmaisys@gmail.com",
+    "repo": "https://github.com/wsmaisys/Nephrology-RAG-MCP-tool"
+  }
 }

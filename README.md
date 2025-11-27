@@ -43,16 +43,16 @@ A production-ready MCP server providing semantic search and retrieval over compr
 
 ### Service Information
 
-| Property            | Value                                                                |
-| ------------------- | -------------------------------------------------------------------- |
-| 🌍 **URL**          | `https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp` |
-| 🏢 **Platform**     | Google Cloud Run (us-central1)                                       |
-| 🔄 **Status**       | Active & Operational                                                 |
-| ⏱️ **Uptime**       | 99.95% SLA                                                           |
-| 📦 **Image**        | `wasimansariiitm/nephrology-rag-mcp:latest`                          |
-| 💾 **Resources**    | 512 MB RAM, 1 vCPU                                                   |
-| 🎯 **Concurrency**  | 80 requests/instance                                                 |
-| ⏳ **Timeout**      | 300 seconds                                                          |
+| Property           | Value                                                                |
+| ------------------ | -------------------------------------------------------------------- |
+| 🌍 **URL**         | `https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp` |
+| 🏢 **Platform**    | Google Cloud Run (us-central1)                                       |
+| 🔄 **Status**      | Active & Operational                                                 |
+| ⏱️ **Uptime**      | 99.95% SLA                                                           |
+| 📦 **Image**       | `wasimansariiitm/nephrology-rag-mcp:latest`                          |
+| 💾 **Resources**   | 512 MB RAM, 1 vCPU                                                   |
+| 🎯 **Concurrency** | 80 requests/instance                                                 |
+| ⏳ **Timeout**     | 300 seconds                                                          |
 
 ### Quick Test
 
@@ -67,6 +67,56 @@ curl -X POST https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp 
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","method":"invoke","params":{"query":"acute kidney injury","k":3},"id":2}'
 ```
+
+---
+
+## 🛠️ MCP Deployment Notes
+
+- **Place manifest:** Ensure `mcp.json` is in the repository root next to `rag_mcp_server.py` so clients and registries can discover tools.
+
+- **Environment variable names (server reads in order):** `MISTRALAI_API_KEY`, `MISTRAL_API_KEY`, `mistral_api_key`. Set one of these in your deployment environment.
+
+- **FastMCP & dependency versions:** Use the versions declared in `pyproject.toml` / `requirements.txt` (recommended `fastmcp>=2.13.1`). Keep container dependencies in sync with the repo.
+
+Local Docker build & test
+
+```bash
+# Build image (repo root)
+docker build -t nephrology-rag-mcp:latest .
+
+# Run locally (forward port 8000)
+docker run --rm -e MISTRALAI_API_KEY="$MISTRALAI_API_KEY" -p 8000:8000 nephrology-rag-mcp:latest
+
+# Health check (local)
+curl -X POST http://localhost:8000/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{"jsonrpc":"2.0","method":"health","params":{},"id":1}'
+```
+
+Google Cloud Run (example)
+
+```bash
+# Build & push
+gcloud builds submit --tag gcr.io/YOUR_PROJECT_ID/nephrology-rag-mcp:latest
+
+# Deploy (set the Mistral API key in Cloud Run env)
+gcloud run deploy nephrology-rag-mcp \
+  --image gcr.io/YOUR_PROJECT_ID/nephrology-rag-mcp:latest \
+  --region us-central1 --allow-unauthenticated \
+  --set-env-vars MISTRALAI_API_KEY=$MISTRALAI_API_KEY
+```
+
+GitHub Actions (CI): build the image, push, and deploy to Cloud Run using a service account with the right permissions (see `MCP_DEPLOY_NOTE.md`).
+
+Compatibility checklist for `langchain_mcp_adapters` clients
+
+- Ensure client config includes a compatible transport for streaming HTTP (examples: `streamable_http` or `sse`) when required by the client library.
+- Clients should send `Accept: application/json, text/event-stream` when calling the MCP endpoint to receive streaming responses.
+- The server accepts session IDs provided in multiple places: top-level `session` field, `params.session`, `session` query parameter, or the `X-FastMCP-Session` header. This helps clients that previously failed with "Missing session ID".
+
+Notes & troubleshooting
+
+- If clients see `Missing session ID`, verify the client either sends a session value or that the client library supports session injection; upgrade FastMCP if the server complains about session handling.
+- If the server returns `406 Not Acceptable`, ensure your client `Accept` header includes both `application/json` and `text/event-stream`.
+- If you see `401 Unauthorized` from Mistral, confirm Cloud Run (or local container) has the correct `MISTRALAI_API_KEY` set.
 
 ---
 
@@ -122,11 +172,103 @@ Add this configuration to your MCP client settings (e.g., Claude Desktop's `clau
 ```
 
 **Configuration locations:**
+
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 - **Linux**: `~/.config/Claude/claude_desktop_config.json`
 
 After adding the configuration, restart your MCP client to load the server.
+
+---
+
+### 🔗 Using with LangChain (`langchain-mcp-adapters`)
+
+If you're integrating with LangChain via `langchain-mcp-adapters`, use this configuration:
+
+#### ✅ Correct Configuration (HTTP streaming transport)
+
+```python
+import os
+from dotenv import load_dotenv
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+load_dotenv()  # Load from .env
+
+# Use the standard `transport` key per the universal MCP config. For
+# this server prefer 'sse' or 'streamable_http' to indicate HTTP streaming.
+mcp_config = {
+  "mcpServers": {
+    "nephrology-rag": {
+      "transport": "sse",
+      "url": "https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp"
+    }
+  }
+}
+
+# Initialize the MCP client
+mcp_client = MultiServerMCPClient(mcp_config)
+
+# Load tools (async clients may require awaiting/get_tools())
+tools = mcp_client.get_tools()
+```
+
+#### ⚠️ Common Mistakes
+
+**❌ Wrong: Forcing an incompatible transport**
+
+```python
+mcp_config = {
+  "mcpServers": {
+    "nephrology-rag": {
+      "transport": "websocket",  # ← WRONG for this server (it uses HTTP streaming)
+      "url": "https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp"
+    }
+  }
+}
+```
+
+**❌ Wrong: Passing API key in server config**
+
+```python
+mcp_config = {
+  "mcpServers": {
+    "nephrology-rag": {
+      "type": "http",
+      "url": "https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp",
+      "env": {
+        "MISTRAL_API_KEY": os.getenv("MISTRAL_API_KEY")  # ← Won't work for HTTP URLs
+      }
+    }
+  }
+}
+```
+
+#### ℹ️ About API Key Management
+
+- The deployed server on Cloud Run **already has `MISTRAL_API_KEY` configured** in its environment
+- The client **does not need** to pass the API key to the server
+- Ensure `MISTRAL_API_KEY` is in your client's `.env` or environment (for your LangChain code if needed)
+
+#### Local Testing (Alternative)
+
+For local development using stdio transport:
+
+```python
+mcp_config = {
+  "mcpServers": {
+    "nephrology-rag": {
+      "command": "python",
+      "args": ["rag_mcp_server.py"],
+      "env": {
+        "MISTRAL_API_KEY": os.getenv("MISTRAL_API_KEY", ""),
+        "MCP_TRANSPORT": "stdio"
+      }
+    }
+  }
+}
+```
+
+**Note:** This requires setting `MCP_TRANSPORT=stdio` support in `rag_mcp_server.py` and running the server locally.
 
 ---
 
@@ -247,12 +389,12 @@ from fastmcp import Client
 
 async def test_service():
     url = "http://localhost:8000/mcp"
-    
+
     async with Client(url) as client:
         # Health check
         health = await client.call_tool("health", {})
         print(f"Health: {health}")
-        
+
         # Query RAG
         result = await client.call_tool(
             "invoke",
@@ -335,21 +477,23 @@ Nephrology-RAG-MCP-tool/
 
 ### Environment Variables
 
-| Variable            | Required | Default | Description              |
-| ------------------- | -------- | ------- | ------------------------ |
-| `MISTRAL_API_KEY`   | ✅ Yes   | -       | Mistral AI API key       |
-| `MISTRALAI_API_KEY` | ⚠️ Alt   | -       | Alternative key name     |
-| `PORT`              | ❌ No    | 8000    | Server port              |
+| Variable            | Required | Default | Description          |
+| ------------------- | -------- | ------- | -------------------- |
+| `MISTRAL_API_KEY`   | ✅ Yes   | -       | Mistral AI API key   |
+| `MISTRALAI_API_KEY` | ⚠️ Alt   | -       | Alternative key name |
+| `PORT`              | ❌ No    | 8000    | Server port          |
 
 ### Security Best Practices
 
 ✅ **DO:**
+
 - Store API keys in environment variables or `.env` files
 - Add `.env` to `.gitignore`
 - Use HTTPS in production
 - Rotate keys regularly
 
 ❌ **DON'T:**
+
 - Commit API keys to version control
 - Include quotes in `.env` values (use `KEY=value` not `KEY="value"`)
 - Share keys in issues or PRs
@@ -357,6 +501,50 @@ Nephrology-RAG-MCP-tool/
 ---
 
 ## 🆘 Troubleshooting
+
+### LangChain MCP Configuration Errors
+
+#### Error: `ValidationError: 'transport' is a required property`
+
+**Cause:** The client-side MCP config omitted the standard `transport` field, or provided an incompatible transport value.
+
+**Solution:** Provide a `transport` key and set it to an appropriate value (for this server use `sse` or `streamable_http`). Example:
+
+```python
+# ✅ Correct (preferred)
+mcp_config = {
+  "mcpServers": {
+    "nephrology-rag": {
+      "transport": "sse",
+      "url": "https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp"
+    }
+  }
+}
+
+# ❌ Wrong (incompatible transport)
+mcp_config = {
+  "mcpServers": {
+    "nephrology-rag": {
+      "transport": "websocket",
+      "url": "https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp"
+    }
+  }
+}
+```
+
+#### Error: `ValueError: Configuration error loading MCP tools`
+
+**Cause:** Usually due to:
+
+- Wrong transport type specified
+- Invalid server URL
+- API key not configured on the server side
+
+**Solution:**
+
+1. Verify the server URL is correct (check deployment status)
+2. Ensure the MCP client config includes a correct `"transport"` key (e.g., `"sse"` or `"streamable_http"`)
+3. Ensure the deployed server has `MISTRAL_API_KEY` configured
 
 ### `401 Unauthorized` from Mistral API
 
@@ -430,6 +618,7 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) file for
 ## 🙌 Acknowledgments
 
 Built with contributions from:
+
 - Medical Literature: Comprehensive Clinical Nephrology textbooks
 - Vector Search: Facebook Research (FAISS)
 - LLM Infrastructure: Mistral AI

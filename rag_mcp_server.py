@@ -14,6 +14,10 @@ if m:
     os.environ["MISTRALAI_API_KEY"] = m
 
 from fastmcp import FastMCP
+import json
+import uuid
+from starlette.requests import Request
+from starlette.responses import Response
 
 VECTOR_STORE_PATH = "vector_store"
 
@@ -28,6 +32,13 @@ try:
     mcp = FastMCP("nephrology-rag-mcp", require_session=False)
 except TypeError:
     mcp = FastMCP("nephrology-rag-mcp")
+else:
+    # Log whether the FastMCP instance enforces sessions
+    try:
+        req = getattr(mcp, "require_session", None)
+        print(f"[RAG MCP] FastMCP require_session attribute: {req}")
+    except Exception:
+        pass
 
 
 def _load_vector_store():
@@ -137,6 +148,65 @@ if __name__ == "__main__":
     print(f"[RAG MCP] Server listening on http://0.0.0.0:{port}")
     # Configure request timeout at runtime when supported; otherwise start
     # without it to remain compatible with different FastMCP releases.
+    # Add a small compatibility middleware so HTTP clients that do not perform
+    # a session negotiation can still call the endpoint. This middleware will
+    # inject a session id into the JSON-RPC envelope (under "session") when
+    # missing and allow common session carriers (header/query param).
+    try:
+        app = getattr(mcp, "app", None)
+        if app is not None:
+            @app.middleware("http")
+            async def _inject_session_middleware(request, call_next):
+                try:
+                    # Only adjust POSTs to the MCP endpoint
+                    if request.method.upper() == "POST" and request.url.path.endswith("/mcp"):
+                        # Ensure Accept header allows both JSON and SSE
+                        if "accept" not in request.headers:
+                            # Mutate scope headers to insert Accept header so FastMCP sees it
+                            try:
+                                headers = list(request._scope.get("headers", []))
+                                headers.append((b"accept", b"application/json, text/event-stream"))
+                                request._scope["headers"] = headers
+                            except Exception:
+                                pass
+
+                        body = await request.body()
+                        try:
+                            payload = json.loads(body.decode() or "{}")
+                        except Exception:
+                            payload = None
+
+                        # discover session from headers or query param
+                        session = None
+                        for h in ("x-fastmcp-session", "x-session-id", "x-session"):
+                            if h in request.headers:
+                                session = request.headers[h]
+                                break
+                        if not session:
+                            session = request.query_params.get("session")
+
+                        modified = False
+                        if isinstance(payload, dict):
+                            if "session" not in payload:
+                                payload["session"] = session or str(uuid.uuid4())
+                                modified = True
+
+                        if modified:
+                            new_body = json.dumps(payload).encode()
+                            async def receive():
+                                return {"type": "http.request", "body": new_body, "more_body": False}
+                            # Monkey-patch the receive method so downstream sees the modified body
+                            request._receive = receive
+
+                except Exception as e:
+                    # Be conservative: log and proceed without blocking
+                    print(f"[RAG MCP] Session middleware error: {e}")
+
+                return await call_next(request)
+
+    except Exception as e:
+        print(f"[RAG MCP] Unable to register session middleware: {e}")
+
     try:
         mcp.run(transport="http", host="0.0.0.0", port=port, request_timeout=300)
     except TypeError:
