@@ -140,7 +140,28 @@ def _load_vector_store() -> bool:
 
     except Exception as e:
         logger.error("Failed to load FAISS vector store: %s", e)
-        logger.debug(traceback.format_exc())
+        # Ensure full traceback is visible in logs (INFO/ERROR may be captured by Cloud Run)
+        tb = traceback.format_exc()
+        logger.error("Full exception traceback:\n%s", tb)
+        # Log Python runtime info to help diagnose deserialization mismatches
+        try:
+            logger.error("Python executable: %s", sys.executable)
+            logger.error("Python version: %s", sys.version.replace('\n', ' '))
+        except Exception:
+            logger.error("Could not read Python version info")
+        # Log installed packages (pip freeze) truncated to avoid excessively large logs
+        try:
+            import subprocess
+            pip_output = subprocess.check_output([sys.executable, "-m", "pip", "freeze"], text=True, stderr=subprocess.STDOUT)
+            # Truncate to first 32000 characters to be safe for log ingestion
+            max_len = 32000
+            if len(pip_output) > max_len:
+                logger.error("pip freeze (truncated):\n%s", pip_output[:max_len])
+            else:
+                logger.error("pip freeze:\n%s", pip_output)
+        except Exception:
+            logger.error("Failed to run pip freeze: %s", traceback.format_exc())
+
         _vector_store = None
         _retriever = None
         return False
