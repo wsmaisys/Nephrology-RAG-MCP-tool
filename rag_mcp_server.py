@@ -131,9 +131,53 @@ def _load_vector_store() -> bool:
             embeddings = MistralAIEmbeddings(model="mistral-embed")
 
         # Load FAISS vector store
-        _vector_store = FAISS.load_local(
-            VECTOR_STORE_PATH, embeddings, allow_dangerous_deserialization=True
-        )
+        # Some pickled LangChain metadata may have been created with different
+        # pydantic internals and miss the '__fields_set__' key. That causes
+        # a KeyError inside pydantic's BaseModel.__setstate__ when unpickling.
+        # To be resilient, temporarily monkeypatch pydantic.v1.BaseModel.__setstate__
+        # to supply a default '__fields_set__' and then restore it after load.
+        _pyd_original_setstate = None
+        _pyd_module = None
+        try:
+            try:
+                import pydantic.v1.main as _pyd_v1_main
+                _pyd_module = _pyd_v1_main
+            except Exception:
+                # pydantic v1 not present as v1 namespace; try fallback
+                import pydantic.main as _pyd_main
+                _pyd_module = _pyd_main
+            if _pyd_module and hasattr(_pyd_module, 'BaseModel'):
+                _pyd_original_setstate = getattr(_pyd_module.BaseModel, '__setstate__', None)
+                def _safe_setstate(self, state):
+                    try:
+                        if isinstance(state, dict) and '__fields_set__' not in state:
+                            state['__fields_set__'] = set()
+                    except Exception:
+                        pass
+                    if _pyd_original_setstate:
+                        return _pyd_original_setstate(self, state)
+                    # best-effort fallback
+                    try:
+                        object.__setattr__(self, '__dict__', state)
+                    except Exception:
+                        pass
+                _pyd_module.BaseModel.__setstate__ = _safe_setstate
+                logger.info("Patched pydantic BaseModel.__setstate__ for compatibility during unpickle")
+        except Exception as ex:
+            logger.debug("Could not apply pydantic monkeypatch: %s", ex)
+
+        try:
+            _vector_store = FAISS.load_local(
+                VECTOR_STORE_PATH, embeddings, allow_dangerous_deserialization=True
+            )
+        finally:
+            # restore original setstate if we patched it
+            try:
+                if _pyd_module and _pyd_original_setstate is not None:
+                    _pyd_module.BaseModel.__setstate__ = _pyd_original_setstate
+                    logger.info("Restored original pydantic BaseModel.__setstate__")
+            except Exception:
+                logger.debug("Failed to restore pydantic BaseModel.__setstate__")
         _retriever = _vector_store.as_retriever(search_type="similarity",
                                                 search_kwargs={"k": DEFAULT_K})
         return True
