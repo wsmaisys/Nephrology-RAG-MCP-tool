@@ -20,13 +20,19 @@ import json
 import uuid
 import asyncio
 import traceback
+import logging
 from typing import Optional, Dict, Any, List, AsyncGenerator, Callable
+
+# Suppress verbose third-party logging BEFORE importing their modules
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
+logging.getLogger("transformers").setLevel(logging.WARNING)
 
 from fastapi import FastAPI, Request, Header, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
-import logging
 
 # ---------------------------
 # Configuration (single secret)
@@ -92,22 +98,26 @@ def _update_session(session_id: str, query: str):
 def _load_vector_store() -> bool:
     global _vector_store, _retriever
     try:
-        # Lazy imports so the server can start and fail gracefully if deps missing
         from langchain_mistralai import MistralAIEmbeddings
-        try:
-            from langchain_community.vectorstores import FAISS
-        except Exception:
-            # fallback to main langchain location
-            from langchain_community.vectorstores import FAISS
+        from langchain_community.vectorstores import FAISS
+
+        if not MISTRAL_API_KEY:
+            logger.error("MISTRAL_API_KEY not set; cannot initialize embeddings")
+            return False
 
         logger.info("Loading FAISS vector store from: %s", VECTOR_STORE_PATH)
+        logger.info("Using Mistral API: https://api.mistral.ai/v1/embeddings (model: mistral-embed)")
+        
+        # Create embeddings using LangChain's MistralAIEmbeddings
+        # (this handles all API communication directly, no HuggingFace downloads)
         embeddings = MistralAIEmbeddings(model="mistral-embed")
+        
+        # Load FAISS vector store with allow_dangerous_deserialization=True
+        # This works because MistralAIEmbeddings is LangChain-compatible
         _vector_store = FAISS.load_local(VECTOR_STORE_PATH, embeddings, allow_dangerous_deserialization=True)
-        # Prefer a retriever interface if available
-        try:
-            _retriever = _vector_store.as_retriever(search_type="similarity", search_kwargs={"k": DEFAULT_K})
-        except Exception:
-            _retriever = _vector_store
+        
+        # Create retriever interface
+        _retriever = _vector_store.as_retriever(search_type="similarity", search_kwargs={"k": DEFAULT_K})
         logger.info("Vector store loaded successfully.")
         return True
     except Exception as exc:

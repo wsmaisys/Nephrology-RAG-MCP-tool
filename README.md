@@ -66,7 +66,7 @@ Distribute this configuration to your users:
 {
   "mcpServers": {
     "nephrology-rag": {
-      "url": "https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp",
+      "url": "https://nephrology-rag-mcp-tool-785629432566.us-central1.run.app/mcp",
       "transport": "http",
       "headers": {
         "Authorization": "Bearer YOUR_MCP_API_KEY_HERE"
@@ -86,7 +86,7 @@ Distribute this configuration to your users:
 **HTTP POST Request:**
 
 ```bash
-curl -X POST https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp \
+curl -X POST https://nephrology-rag-mcp-tool-785629432566.us-central1.run.app/mcp \
   -H "Content-Type: application/json" \
   -H "Accept: text/event-stream" \
   -H "Authorization: Bearer YOUR_API_KEY" \
@@ -107,7 +107,7 @@ curl -X POST https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp 
 **With Session Tracking:**
 
 ```bash
-curl -X POST https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp \
+curl -X POST https://nephrology-rag-mcp-tool-785629432566.us-central1.run.app/mcp \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "X-Session-ID: user-123" \
   -H "Accept: text/event-stream" \
@@ -121,7 +121,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 
 const transport = new SSEClientTransport(
-  new URL("https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp"),
+  new URL("https://nephrology-rag-mcp-tool-785629432566.us-central1.run.app/mcp"),
   {
     headers: {
       Authorization: "Bearer YOUR_API_KEY",
@@ -161,7 +161,7 @@ import requests
 import json
 
 API_KEY = "your_mcp_api_key"
-SERVER_URL = "https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp"
+SERVER_URL = "https://nephrology-rag-mcp-tool-785629432566.us-central1.run.app/mcp"
 
 def query_nephrology(query: str, k: int = 4):
     """Query the nephrology RAG server."""
@@ -426,7 +426,7 @@ curl https://your-server.com/health
 
 ```bash
 # Get server status
-curl -X POST https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp \
+curl -X POST https://nephrology-rag-mcp-tool-785629432566.us-central1.run.app/mcp \
   -H "Authorization: Bearer YOUR_KEY" \
   -d '{
     "jsonrpc": "2.0",
@@ -442,7 +442,7 @@ curl -X POST https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp 
 
 ```bash
 # List active sessions (admin)
-curl -X POST https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp \
+curl -X POST https://nephrology-rag-mcp-tool-785629432566.us-central1.run.app/mcp \
   -H "Authorization: Bearer YOUR_KEY" \
   -d '{
     "jsonrpc": "2.0",
@@ -527,10 +527,10 @@ Expected: `{"status": "healthy", ...}`
 
 ```bash
 # Without auth (should fail if enabled)
-curl -X POST https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp -d '{...}'
+curl -X POST https://nephrology-rag-mcp-tool-785629432566.us-central1.run.app/mcp -d '{...}'
 
 # With auth (should succeed)
-curl -X POST https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp \
+curl -X POST https://nephrology-rag-mcp-tool-785629432566.us-central1.run.app/mcp \
   -H "Authorization: Bearer YOUR_KEY" \
   -d '{...}'
 ```
@@ -538,7 +538,7 @@ curl -X POST https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp 
 ### 3. Test Query
 
 ```bash
-curl -X POST https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp \
+curl -X POST https://nephrology-rag-mcp-tool-785629432566.us-central1.run.app/mcp \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_KEY" \
   -H "Accept: text/event-stream" \
@@ -567,7 +567,7 @@ ab -n 1000 -c 10 \
   -H "Authorization: Bearer YOUR_KEY" \
   -p request.json \
   -T "application/json" \
-  https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp
+  https://nephrology-rag-mcp-tool-785629432566.us-central1.run.app/mcp
 ```
 
 ---
