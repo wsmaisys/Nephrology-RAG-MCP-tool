@@ -23,7 +23,6 @@ if mistral_key:
     os.environ["MISTRALAI_API_KEY"] = mistral_key
 
 from fastmcp import FastMCP
-from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -40,18 +39,16 @@ _sessions: Dict[str, Dict[str, Any]] = {}
 _vector_store = None
 _retriever = None
 
-# Initialize MCP server with CORS support
-mcp = FastMCP(
-    "nephrology-rag",
-    dependencies=[
-        Middleware(
-            CORSMiddleware,
-            allow_origins=ALLOWED_ORIGINS,
-            allow_credentials=True,
-            allow_methods=["*"],
-            allow_headers=["*"],
-        )
-    ]
+# Initialize MCP server (without passing middleware to FastMCP)
+mcp = FastMCP("nephrology-rag")
+
+# Add CORS middleware to the underlying Starlette app after FastMCP initialization
+mcp.app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
