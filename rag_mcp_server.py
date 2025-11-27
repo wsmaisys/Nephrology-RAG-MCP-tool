@@ -298,9 +298,9 @@ def main():
     print("Nephrology RAG MCP Server - Production HTTP/SSE Transport")
     print("=" * 70)
     
-    # Hardcode port 8080 for Cloud Run compatibility
+    # Hardcode port 8000 for Cloud Run compatibility
     host = "0.0.0.0"
-    port = 8080
+    port = 8000
     
     print(f"\n[MCP] Configuration:")
     print(f"  - Host: {host}")
