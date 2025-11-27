@@ -13,43 +13,26 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Normalize Mistral API key
-mistral_key = (
-    os.environ.get("MISTRALAI_API_KEY") 
-    or os.environ.get("MISTRAL_API_KEY") 
-    or os.environ.get("mistral_api_key")
-)
+# Get Mistral API key from environment (only secret variable)
+mistral_key = os.environ.get("MISTRAL_API_KEY")
 if mistral_key:
     os.environ["MISTRALAI_API_KEY"] = mistral_key
 
 from fastmcp import FastMCP
-from starlette.middleware.cors import CORSMiddleware
-from starlette.requests import Request
-from starlette.responses import JSONResponse
-import uvicorn
 
-# Configuration
-VECTOR_STORE_PATH = os.environ.get("VECTOR_STORE_PATH", "vector_store")
+# Configuration (all hardcoded except MISTRAL_API_KEY)
+VECTOR_STORE_PATH = "vector_store"
 DEFAULT_K = 4
-API_KEY = os.environ.get("MCP_API_KEY", "Comhensive_book_on_nephrology")  # Optional: for authentication
-ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
+SERVER_NAME = "nephrology-rag"
+SERVER_VERSION = "1.0.0"
 
 # Session management for multi-user
 _sessions: Dict[str, Dict[str, Any]] = {}
 _vector_store = None
 _retriever = None
 
-# Initialize MCP server (without passing middleware to FastMCP)
+# Initialize MCP server
 mcp = FastMCP("nephrology-rag")
-
-# Add CORS middleware to the underlying Starlette app after FastMCP initialization
-mcp.app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 
 def _load_vector_store():
@@ -216,8 +199,8 @@ async def get_server_info(session_id: Optional[str] = None) -> dict:
         
         return {
             "status": "ready" if is_ready else "not_ready",
-            "server_name": "nephrology-rag",
-            "version": "1.0.0",
+            "server_name": SERVER_NAME,
+            "version": SERVER_VERSION,
             "transport": "http/sse",
             "vector_store_path": VECTOR_STORE_PATH,
             "retriever_initialized": is_ready,
@@ -263,12 +246,12 @@ def server_metadata():
     """Provide server metadata for MCP discovery."""
     return {
         "name": "Nephrology RAG Server",
-        "version": "1.0.0",
+        "version": SERVER_VERSION,
         "description": "Multi-user RAG server for nephrology clinical documentation",
         "transport": "http/sse",
         "capabilities": {
             "streaming": True,
-            "authentication": API_KEY is not None,
+            "authentication": False,
             "multi_user": True,
             "tools": [
                 {
@@ -308,66 +291,6 @@ def server_metadata():
     }
 
 
-# Custom middleware for authentication and session management
-@mcp.app.middleware("http")
-async def auth_and_session_middleware(request: Request, call_next):
-    """Handle authentication and session management for all requests."""
-    
-    # Skip middleware for health check and metadata endpoints
-    if request.url.path in ["/health", "/", "/metadata"]:
-        return await call_next(request)
-    
-    # Optional API key authentication
-    if API_KEY:
-        auth_header = request.headers.get("Authorization")
-        api_key_param = request.query_params.get("api_key")
-        
-        provided_key = None
-        if auth_header and auth_header.startswith("Bearer "):
-            provided_key = auth_header[7:]
-        elif api_key_param:
-            provided_key = api_key_param
-        
-        if provided_key != API_KEY:
-            return JSONResponse(
-                status_code=401,
-                content={"error": "Unauthorized", "message": "Invalid or missing API key"}
-            )
-    
-    # Extract or create session ID
-    session_id = request.headers.get("X-Session-ID") or request.query_params.get("session_id")
-    
-    # Inject session ID into request state
-    request.state.session_id = session_id
-    
-    response = await call_next(request)
-    
-    # Add session ID to response headers
-    if hasattr(request.state, "session_id") and request.state.session_id:
-        response.headers["X-Session-ID"] = request.state.session_id
-    
-    return response
-
-
-# Health check endpoint
-@mcp.app.get("/health")
-async def health_check():
-    """Simple health check endpoint for load balancers."""
-    return {
-        "status": "healthy" if _retriever is not None else "degraded",
-        "service": "nephrology-rag-mcp",
-        "version": "1.0.0"
-    }
-
-
-# Metadata endpoint
-@mcp.app.get("/")
-@mcp.app.get("/metadata")
-async def get_metadata():
-    """Get server metadata without MCP protocol."""
-    return server_metadata()
-
-
 def main():
     """Main entry point for production MCP server."""
     
@@ -383,21 +306,15 @@ def main():
     print(f"  - Host: {host}")
     print(f"  - Port: {port}")
     print(f"  - Transport: HTTP/SSE")
-    print(f"  - Authentication: {'Enabled' if API_KEY else 'Disabled'}")
-    print(f"  - CORS Origins: {ALLOWED_ORIGINS}")
+    print(f"  - Server: {SERVER_NAME} v{SERVER_VERSION}")
     print(f"  - Vector Store: {VECTOR_STORE_PATH}")
     print(f"\n[MCP] Endpoints:")
     print(f"  - MCP: http://{host}:{port}/mcp")
-    print(f"  - Health: http://{host}:{port}/health")
-    print(f"  - Metadata: http://{host}:{port}/metadata")
-    
-    if API_KEY:
-        print(f"\n[MCP] 🔒 API Key authentication is ENABLED")
     
     print(f"\n[MCP] 🚀 Starting server on {host}:{port}...\n")
     print("=" * 70)
     
-    # Load vector store after binding to port
+    # Load vector store before starting MCP server
     print("[MCP] Loading vector store...")
     vector_store_loaded = _load_vector_store()
     
@@ -406,17 +323,11 @@ def main():
         print("[MCP] Server will start but queries will fail")
         print("[MCP] Please check MISTRALAI_API_KEY and VECTOR_STORE_PATH")
     
-    # Run with uvicorn for production
+    # Run FastMCP HTTP server
     try:
-        uvicorn.run(
-            mcp.app,
+        mcp.run(
             host=host,
-            port=port,
-            log_level="info",
-            access_log=True,
-            timeout_keep_alive=300,
-            limit_concurrency=100,
-            limit_max_requests=10000
+            port=port
         )
     except Exception as e:
         print(f"[MCP] ✗ Server startup failed: {e}")
