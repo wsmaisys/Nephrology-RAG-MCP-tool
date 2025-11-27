@@ -378,17 +378,19 @@ def main():
     print("Nephrology RAG MCP Server - Production HTTP/SSE Transport")
     print("=" * 70)
     
-    # Load vector store at startup
+    # Get configuration first (before loading vector store)
+    port = int(os.environ.get("PORT", 8080))
+    host = os.environ.get("HOST", "0.0.0.0")
+    
+    print(f"\n[MCP] Starting on {host}:{port}")
+    
+    # Load vector store at startup (non-blocking to allow server to start)
     vector_store_loaded = _load_vector_store()
     
     if not vector_store_loaded:
         print("[MCP] ⚠️  WARNING: Vector store failed to load")
         print("[MCP] Server will start but queries will fail")
         print("[MCP] Please check MISTRALAI_API_KEY and VECTOR_STORE_PATH")
-    
-    # Configuration summary
-    port = int(os.environ.get("PORT", 8080))
-    host = os.environ.get("HOST", "0.0.0.0")
     
     print(f"\n[MCP] Configuration:")
     print(f"  - Host: {host}")
@@ -409,20 +411,25 @@ def main():
         print(f"\n[MCP] ⚠️  WARNING: Running without authentication")
         print(f"[MCP] Set MCP_API_KEY environment variable to enable auth")
     
-    print(f"\n[MCP] 🚀 Starting server...\n")
+    print(f"\n[MCP] 🚀 Starting server on {host}:{port}...\n")
     print("=" * 70)
     
     # Run with uvicorn for production
-    uvicorn.run(
-        mcp.app,
-        host=host,
-        port=port,
-        log_level="info",
-        access_log=True,
-        timeout_keep_alive=300,
-        limit_concurrency=100,
-        limit_max_requests=10000
-    )
+    # Ensure the server binds to the PORT environment variable
+    try:
+        uvicorn.run(
+            mcp.app,
+            host=host,
+            port=port,
+            log_level="info",
+            access_log=True,
+            timeout_keep_alive=300,
+            limit_concurrency=100,
+            limit_max_requests=10000
+        )
+    except Exception as e:
+        print(f"[MCP] ✗ Server startup failed: {e}")
+        raise
 
 
 if __name__ == "__main__":

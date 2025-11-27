@@ -1,12 +1,13 @@
 # Use a stable Python version compatible with FAISS + LangChain
 FROM python:3.10-slim
 
-# Prevent Python from writing .pyc files and buffering
+# Prevent Python from writing .pyc files and buffering immediately
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 # Cloud Run expects the app to listen on port 8080
 ENV PORT=8080
+ENV HOST=0.0.0.0
 
 # Create working directory
 WORKDIR /app
@@ -15,6 +16,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     g++ \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first (for Docker layer caching)
@@ -29,6 +31,10 @@ COPY . /app/
 # Expose expected port
 EXPOSE 8080
 
+# Health check - ensure container stays healthy
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD curl -f http://localhost:8080/health || exit 1
+
 # Start your MCP server
-# Make sure rag_mcp_server.py calls server.run(host="0.0.0.0", port=8080)
+# The server will bind to 0.0.0.0:8080 as expected by Cloud Run
 CMD ["python", "rag_mcp_server.py"]
