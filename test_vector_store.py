@@ -30,7 +30,8 @@ except Exception:
 # -----------------------------------------------------
 # CONFIGURATION
 # -----------------------------------------------------
-MCP_URL = "http://localhost:8000/mcp"   # <-- change ONLY if needed
+MCP_URL = "http://localhost:8000/mcp"
+#MCP_URL = "https://nephrology-rag-mcp-tool-785629432566.us-central1.run.app/mcp"   # <-- change ONLY if needed
 TIMEOUT = 30
 
 # -----------------------------------------------------

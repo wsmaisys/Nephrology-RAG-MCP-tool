@@ -28,7 +28,7 @@ load_dotenv()
 # ---------------------------
 APP_NAME = "nephrology-rag-mcp"
 APP_VERSION = "1.0.0"
-VECTOR_STORE_PATH = os.environ.get("VECTOR_STORE_PATH", "vector_store")
+VECTOR_STORE_PATH = "vector_store"
 DEFAULT_K = int(os.environ.get("DEFAULT_K", "4"))
 
 # Load .env for local development (if present)
