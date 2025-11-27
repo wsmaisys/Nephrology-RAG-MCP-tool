@@ -1,636 +1,741 @@
-# 🩺 Nephrology RAG MCP Server
+# Production MCP Server Deployment Guide
 
-> **Production-Grade Medical Knowledge Retrieval for Nephrology Using the Model Context Protocol (MCP)**
+## HTTP/SSE Transport for Multi-User Access
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![FastMCP](https://img.shields.io/badge/FastMCP-2.13.1-brightgreen.svg)](https://github.com/jlowin/fastmcp)
-[![Google Cloud Run](https://img.shields.io/badge/Cloud-Run-orange.svg)](https://cloud.google.com/run)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Status: Production](https://img.shields.io/badge/Status-Production-brightgreen.svg)](#-live-deployment)
-
-A production-ready MCP server providing semantic search and retrieval over comprehensive nephrology medical literature using vector embeddings and RAG (Retrieval-Augmented Generation).
+This guide covers deploying an enterprise-ready MCP server with HTTP/SSE streaming transport for groups of users.
 
 ---
 
-## 📋 Table of Contents
+## 🎯 Overview
 
-- [Features](#-features)
-- [Live Deployment](#-live-deployment)
-- [Quick Start](#-quick-start)
-- [MCP Configuration](#-mcp-configuration)
-- [MCP Tools Reference](#-mcp-tools-reference)
-- [Local Development](#-local-development)
-- [Testing](#-testing)
-- [Architecture](#-architecture)
-- [Project Structure](#-project-structure)
-- [Configuration](#-configuration)
-- [Troubleshooting](#-troubleshooting)
-- [Contributing](#-contributing)
-- [License](#-license)
+Your MCP server is configured for:
+
+- ✅ **HTTP/SSE Transport** - Streamable responses over HTTP
+- ✅ **Multi-User Support** - Session management for concurrent users
+- ✅ **Authentication** - API key-based security
+- ✅ **CORS Support** - Cross-origin resource sharing
+- ✅ **Production Ready** - Load balancing, auto-scaling, monitoring
 
 ---
 
-## ✨ Features
+## 🔧 Quick Start
 
-- **Semantic Search with RAG** - Vector-based retrieval using FAISS with domain-optimized embeddings via Mistral AI
-- **MCP-Compliant Tooling** - Fully compliant with [Model Context Protocol v2024-11-05](https://modelcontextprotocol.io/)
-- **Production-Ready Infrastructure** - FastMCP framework with async/await patterns, error handling, and logging
-- **Medical Domain Optimized** - Comprehensive nephrology corpus with high-quality 1024-dim embeddings and metadata enrichment
-
----
-
-## 🌐 Live Deployment
-
-### Service Information
-
-| Property           | Value                                                                |
-| ------------------ | -------------------------------------------------------------------- |
-| 🌍 **URL**         | `https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp` |
-| 🏢 **Platform**    | Google Cloud Run (us-central1)                                       |
-| 🔄 **Status**      | Active & Operational                                                 |
-| ⏱️ **Uptime**      | 99.95% SLA                                                           |
-| 📦 **Image**       | `wasimansariiitm/nephrology-rag-mcp:latest`                          |
-| 💾 **Resources**   | 512 MB RAM, 1 vCPU                                                   |
-| 🎯 **Concurrency** | 80 requests/instance                                                 |
-| ⏳ **Timeout**     | 300 seconds                                                          |
-
-### Quick Test
+### 1. Generate API Keys
 
 ```bash
-# Health check
-curl -X POST https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp \
-  -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","method":"health","params":{},"id":1}'
+# Generate secure MCP API key for authentication
+python -c "import secrets; print('MCP_API_KEY=' + secrets.token_urlsafe(32))"
 
-# Query documents
-curl -X POST https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp \
-  -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","method":"invoke","params":{"query":"acute kidney injury","k":3},"id":2}'
+# Save output to .env file
 ```
 
----
-
-## 🛠️ MCP Deployment Notes
-
-- **Place manifest:** Ensure `mcp.json` is in the repository root next to `rag_mcp_server.py` so clients and registries can discover tools.
-
-- **Environment variable names (server reads in order):** `MISTRALAI_API_KEY`, `MISTRAL_API_KEY`, `mistral_api_key`. Set one of these in your deployment environment.
-
-- **FastMCP & dependency versions:** Use the versions declared in `pyproject.toml` / `requirements.txt` (recommended `fastmcp>=2.13.1`). Keep container dependencies in sync with the repo.
-
-Local Docker build & test
-
-```bash
-# Build image (repo root)
-docker build -t nephrology-rag-mcp:latest .
-
-# Run locally (forward port 8000)
-docker run --rm -e MISTRALAI_API_KEY="$MISTRALAI_API_KEY" -p 8000:8000 nephrology-rag-mcp:latest
-
-# Health check (local)
-curl -X POST http://localhost:8000/mcp -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{"jsonrpc":"2.0","method":"health","params":{},"id":1}'
-```
-
-Google Cloud Run (example)
-
-```bash
-# Build & push
-gcloud builds submit --tag gcr.io/YOUR_PROJECT_ID/nephrology-rag-mcp:latest
-
-# Deploy (set the Mistral API key in Cloud Run env)
-gcloud run deploy nephrology-rag-mcp \
-  --image gcr.io/YOUR_PROJECT_ID/nephrology-rag-mcp:latest \
-  --region us-central1 --allow-unauthenticated \
-  --set-env-vars MISTRALAI_API_KEY=$MISTRALAI_API_KEY
-```
-
-GitHub Actions (CI): build the image, push, and deploy to Cloud Run using a service account with the right permissions (see `MCP_DEPLOY_NOTE.md`).
-
-Compatibility checklist for `langchain_mcp_adapters` clients
-
-- Ensure client config includes a compatible transport for streaming HTTP (examples: `streamable_http` or `sse`) when required by the client library.
-- Clients should send `Accept: application/json, text/event-stream` when calling the MCP endpoint to receive streaming responses.
-- The server accepts session IDs provided in multiple places: top-level `session` field, `params.session`, `session` query parameter, or the `X-FastMCP-Session` header. This helps clients that previously failed with "Missing session ID".
-
-Notes & troubleshooting
-
-- If clients see `Missing session ID`, verify the client either sends a session value or that the client library supports session injection; upgrade FastMCP if the server complains about session handling.
-- If the server returns `406 Not Acceptable`, ensure your client `Accept` header includes both `application/json` and `text/event-stream`.
-- If you see `401 Unauthorized` from Mistral, confirm Cloud Run (or local container) has the correct `MISTRALAI_API_KEY` set.
-
----
-
-## 🚀 Quick Start
-
-### Prerequisites
-
-- Python 3.10+
-- Valid [Mistral AI API key](https://console.mistral.ai/api-keys)
-
-### Installation
-
-```bash
-# Clone repository
-git clone https://github.com/wsmaisys/Nephrology-RAG-MCP-tool.git
-cd Nephrology-RAG-MCP-tool
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# or
-.\venv\Scripts\Activate.ps1  # Windows
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Configure API key
-echo "MISTRAL_API_KEY=your_api_key_here" > .env
-
-# Run server
-python rag_mcp_server.py
-# Server starts on http://0.0.0.0:8000
-```
-
----
-
-## ⚙️ MCP Configuration
-
-Add this configuration to your MCP client settings (e.g., Claude Desktop's `claude_desktop_config.json`):
-
-```json
-{
-  "mcpServers": {
-    "nephrology-rag": {
-      "command": "uvx",
-      "args": [
-        "fastmcp-client",
-        "https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp"
-      ]
-    }
-  }
-}
-```
-
-**Configuration locations:**
-
-- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-- **Linux**: `~/.config/Claude/claude_desktop_config.json`
-
-After adding the configuration, restart your MCP client to load the server.
-
----
-
-### 🔗 Using with LangChain (`langchain-mcp-adapters`)
-
-If you're integrating with LangChain via `langchain-mcp-adapters`, use this configuration:
-
-#### ✅ Correct Configuration (HTTP streaming transport)
-
-```python
-import os
-from dotenv import load_dotenv
-from langchain_mcp_adapters.client import MultiServerMCPClient
-
-load_dotenv()  # Load from .env
-
-# Use the standard `transport` key per the universal MCP config. For
-# this server prefer 'sse' or 'streamable_http' to indicate HTTP streaming.
-mcp_config = {
-  "mcpServers": {
-    "nephrology-rag": {
-      "transport": "sse",
-      "url": "https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp"
-    }
-  }
-}
-
-# Initialize the MCP client
-mcp_client = MultiServerMCPClient(mcp_config)
-
-# Load tools (async clients may require awaiting/get_tools())
-tools = mcp_client.get_tools()
-```
-
-#### ⚠️ Common Mistakes
-
-**❌ Wrong: Forcing an incompatible transport**
-
-```python
-mcp_config = {
-  "mcpServers": {
-    "nephrology-rag": {
-      "transport": "websocket",  # ← WRONG for this server (it uses HTTP streaming)
-      "url": "https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp"
-    }
-  }
-}
-```
-
-**❌ Wrong: Passing API key in server config**
-
-```python
-mcp_config = {
-  "mcpServers": {
-    "nephrology-rag": {
-      "type": "http",
-      "url": "https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp",
-      "env": {
-        "MISTRAL_API_KEY": os.getenv("MISTRAL_API_KEY")  # ← Won't work for HTTP URLs
-      }
-    }
-  }
-}
-```
-
-#### ℹ️ About API Key Management
-
-- The deployed server on Cloud Run **already has `MISTRAL_API_KEY` configured** in its environment
-- The client **does not need** to pass the API key to the server
-- Ensure `MISTRAL_API_KEY` is in your client's `.env` or environment (for your LangChain code if needed)
-
-#### Local Testing (Alternative)
-
-For local development using stdio transport:
-
-```python
-mcp_config = {
-  "mcpServers": {
-    "nephrology-rag": {
-      "command": "python",
-      "args": ["rag_mcp_server.py"],
-      "env": {
-        "MISTRAL_API_KEY": os.getenv("MISTRAL_API_KEY", ""),
-        "MCP_TRANSPORT": "stdio"
-      }
-    }
-  }
-}
-```
-
-**Note:** This requires setting `MCP_TRANSPORT=stdio` support in `rag_mcp_server.py` and running the server locally.
-
----
-
-## 🔧 MCP Tools Reference
-
-### 1️⃣ Tool: `invoke`
-
-Retrieve top-k relevant documents for a query using semantic search.
-
-**Parameters:**
-
-| Name    | Type    | Required | Default | Description                   |
-| ------- | ------- | -------- | ------- | ----------------------------- |
-| `query` | string  | ✅ Yes   | -       | Natural language search query |
-| `k`     | integer | ❌ No    | 4       | Number of results to return   |
-
-**Example Request:**
-
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "invoke",
-  "params": {
-    "query": "acute kidney injury diagnosis and management",
-    "k": 4
-  },
-  "id": 1
-}
-```
-
-**Example Response:**
-
-```json
-{
-  "status": "success",
-  "query": "acute kidney injury diagnosis and management",
-  "context": [
-    "The basic diagnostic approach to patients with AKI is to determine the cause...",
-    "Acute kidney injury (AKI) has become the consensus term for ARF..."
-  ],
-  "metadata": [
-    {
-      "source": "comprehensive-clinical-nephrology.pdf",
-      "page": 963,
-      "page_label": "964",
-      "total_pages": 1469
-    }
-  ],
-  "num_results": 4
-}
-```
-
-### 2️⃣ Tool: `health`
-
-Check service health and readiness.
-
-**Parameters:** None
-
-**Example Request:**
-
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "health",
-  "params": {},
-  "id": 1
-}
-```
-
-**Example Response:**
-
-```json
-{
-  "status": "ok",
-  "message": "RAG service is ready",
-  "vector_store_path": "vector_store"
-}
-```
-
----
-
-## 🛠️ Local Development
-
-### Environment Setup
+### 2. Configure Environment
 
 ```bash
 # Create .env file
 cat > .env << EOF
-MISTRAL_API_KEY=your_mistral_api_key_here
+MISTRALAI_API_KEY=your_mistral_api_key
+MCP_API_KEY=your_generated_api_key
+HOST=0.0.0.0
+PORT=8000
+ALLOWED_ORIGINS=*
 EOF
-
-# Or set environment variable
-export MISTRAL_API_KEY="your_api_key"  # Linux/Mac
-$env:MISTRAL_API_KEY="your_api_key"   # Windows PowerShell
 ```
 
-### Running the Server
+### 3. Install & Run
 
 ```bash
-python rag_mcp_server.py
+# Install dependencies
+pip install -r requirements.txt
 
-# Expected output:
-# [RAG MCP] Starting RAG MCP Server...
-# [RAG MCP] Loading vector store from 'vector_store'...
-# [RAG MCP] Vector store loaded successfully!
-# [RAG MCP] Server listening on http://0.0.0.0:8000
+# Run server
+python rag_mcp_server.py
 ```
+
+Server will start at: `http://0.0.0.0:8000`
 
 ---
 
-## 🧪 Testing
+## 🌐 Client Connection
 
-### Using FastMCP Client
+### For Claude Desktop Users
+
+Distribute this configuration to your users:
+
+```json
+{
+  "mcpServers": {
+    "nephrology-rag": {
+      "url": "https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp",
+      "transport": "http",
+      "headers": {
+        "Authorization": "Bearer YOUR_MCP_API_KEY_HERE"
+      }
+    }
+  }
+}
+```
+
+**File Location:**
+
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+
+### For Custom MCP Clients
+
+**HTTP POST Request:**
+
+```bash
+curl -X POST https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+      "name": "query_nephrology_docs",
+      "arguments": {
+        "query": "chronic kidney disease treatment",
+        "k": 4
+      }
+    }
+  }'
+```
+
+**With Session Tracking:**
+
+```bash
+curl -X POST https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "X-Session-ID: user-123" \
+  -H "Accept: text/event-stream" \
+  -d '...'
+```
+
+### JavaScript/TypeScript Client
+
+```typescript
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+
+const transport = new SSEClientTransport(
+  new URL("https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp"),
+  {
+    headers: {
+      Authorization: "Bearer YOUR_API_KEY",
+      "X-Session-ID": "user-session-123",
+    },
+  }
+);
+
+const client = new Client(
+  {
+    name: "nephrology-client",
+    version: "1.0.0",
+  },
+  {
+    capabilities: {},
+  }
+);
+
+await client.connect(transport);
+
+// Call tool
+const result = await client.callTool({
+  name: "query_nephrology_docs",
+  arguments: {
+    query: "acute kidney injury management",
+    k: 4,
+  },
+});
+
+console.log(result);
+```
+
+### Python Client
 
 ```python
-import asyncio
-from fastmcp import Client
+import requests
+import json
 
-async def test_service():
-    url = "http://localhost:8000/mcp"
+API_KEY = "your_mcp_api_key"
+SERVER_URL = "https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp"
 
-    async with Client(url) as client:
-        # Health check
-        health = await client.call_tool("health", {})
-        print(f"Health: {health}")
+def query_nephrology(query: str, k: int = 4):
+    """Query the nephrology RAG server."""
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "query_nephrology_docs",
+            "arguments": {
+                "query": query,
+                "k": k
+            }
+        }
+    }
 
-        # Query RAG
-        result = await client.call_tool(
-            "invoke",
-            {"query": "acute kidney injury", "k": 4}
-        )
-        print(f"Found {result['num_results']} documents")
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {API_KEY}",
+        "Accept": "text/event-stream"
+    }
 
-asyncio.run(test_service())
+    response = requests.post(SERVER_URL, json=payload, headers=headers)
+    return response.json()
+
+# Usage
+result = query_nephrology("What are CKD stages?")
+print(json.dumps(result, indent=2))
 ```
 
-### Using cURL
+---
+
+## 🚀 Production Deployment Options
+
+### Option 1: Docker Deployment (Recommended)
+
+**Single Server:**
 
 ```bash
-# Health check
-curl -X POST http://localhost:8000/mcp \
-  -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","method":"health","params":{},"id":1}'
+# Build image
+docker build -t nephrology-rag-mcp .
 
-# Query documents
-curl -X POST http://localhost:8000/mcp \
-  -H 'Content-Type: application/json' \
-  -d '{"jsonrpc":"2.0","method":"invoke","params":{"query":"CKD management","k":3},"id":2}'
+# Run container
+docker run -d \
+  --name mcp-server \
+  -p 8000:8080 \
+  -e MISTRALAI_API_KEY="your_key" \
+  -e MCP_API_KEY="your_api_key" \
+  -e ALLOWED_ORIGINS="https://claude.ai,https://your-app.com" \
+  --restart unless-stopped \
+  nephrology-rag-mcp
+
+# Check logs
+docker logs -f mcp-server
+```
+
+**With Docker Compose:**
+
+```bash
+# Start all services (server + nginx + monitoring)
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Scale servers
+docker-compose up -d --scale mcp-server=3
+
+# Stop
+docker-compose down
+```
+
+### Option 2: Kubernetes Deployment
+
+**Deploy to Kubernetes cluster:**
+
+```bash
+# Create namespace and secrets
+kubectl create namespace mcp-server
+
+kubectl create secret generic mcp-secrets \
+  --from-literal=mistral-api-key="your_mistral_key" \
+  --from-literal=mcp-api-key="your_mcp_key" \
+  -n mcp-server
+
+# Deploy
+kubectl apply -f kubernetes-deployment.yaml
+
+# Check status
+kubectl get pods -n mcp-server
+kubectl get svc -n mcp-server
+
+# Get external IP
+kubectl get svc mcp-service -n mcp-server -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+```
+
+**Features:**
+
+- Auto-scaling (2-10 replicas based on CPU/memory)
+- Load balancing
+- Health checks
+- Rolling updates
+
+### Option 3: AWS ECS/Fargate (Terraform)
+
+```bash
+cd terraform
+
+# Initialize Terraform
+terraform init
+
+# Review plan
+terraform plan
+
+# Deploy
+terraform apply
+
+# Get ALB endpoint
+terraform output alb_dns_name
+```
+
+**Features:**
+
+- Fully managed container orchestration
+- Auto-scaling with CloudWatch
+- Secrets management with AWS Secrets Manager
+- Application Load Balancer with SSL
+- CloudWatch logs and monitoring
+
+### Option 4: Google Cloud Run
+
+```bash
+# Build and deploy
+gcloud run deploy nephrology-rag-mcp \
+  --source . \
+  --platform managed \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --set-env-vars "ALLOWED_ORIGINS=*" \
+  --set-secrets "MISTRALAI_API_KEY=mistral-key:latest,MCP_API_KEY=mcp-key:latest" \
+  --memory 2Gi \
+  --cpu 2 \
+  --timeout 300 \
+  --min-instances 1 \
+  --max-instances 10 \
+  --concurrency 80
+
+# Get service URL
+gcloud run services describe nephrology-rag-mcp \
+  --region us-central1 \
+  --format 'value(status.url)'
+```
+
+### Option 5: Azure Container Apps
+
+```bash
+# Create resource group
+az group create --name mcp-rg --location eastus
+
+# Create container app environment
+az containerapp env create \
+  --name mcp-env \
+  --resource-group mcp-rg \
+  --location eastus
+
+# Deploy
+az containerapp create \
+  --name nephrology-rag-mcp \
+  --resource-group mcp-rg \
+  --environment mcp-env \
+  --image your-registry/nephrology-rag-mcp:latest \
+  --target-port 8080 \
+  --ingress external \
+  --min-replicas 2 \
+  --max-replicas 10 \
+  --cpu 1 \
+  --memory 2Gi \
+  --secrets mistral-key=your_key mcp-key=your_api_key \
+  --env-vars \
+    MISTRALAI_API_KEY=secretref:mistral-key \
+    MCP_API_KEY=secretref:mcp-key
 ```
 
 ---
 
-## 🏗️ Architecture
+## 🔒 Security Configuration
 
+### 1. Enable Authentication
+
+```bash
+# Generate strong API key
+export MCP_API_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+
+# Add to environment
+echo "MCP_API_KEY=$MCP_API_KEY" >> .env
 ```
-┌─────────────────────────────────────────┐
-│       FastMCP HTTP Server               │
-│   (Python 3.10 + FastMCP 2.13.1)        │
-└────────────────┬────────────────────────┘
-                 │
-        ┌────────┼────────┐
-        │        │        │
-   ┌────▼──┐ ┌──▼──┐ ┌──▼──────┐
-   │invoke │ │health│ │Resource │
-   └────┬──┘ └──┬──┘ └──┬──────┘
-        │       │       │
-   ┌────▼───────▼───────▼─────┐
-   │ LangChain Retriever       │
-   │ - Async execution         │
-   │ - Error handling          │
-   └────────┬──────────────────┘
-            │
-   ┌────────▼──────────────┐
-   │  FAISS Vector Store   │
-   │  - 1024-dim embeddings│
-   │  - 500+ documents     │
-   └────────┬──────────────┘
-            │
-   ┌────────▼──────────────┐
-   │ Mistral AI Embeddings │
-   │ - Model: mistral-embed│
-   └───────────────────────┘
+
+All clients must include: `Authorization: Bearer YOUR_KEY`
+
+### 2. Configure CORS
+
+**Restrict to specific origins:**
+
+```bash
+# Production setting
+export ALLOWED_ORIGINS="https://claude.ai,https://your-app.com"
+```
+
+**Development (allow all):**
+
+```bash
+export ALLOWED_ORIGINS="*"
+```
+
+### 3. SSL/TLS with Nginx
+
+```bash
+# Generate SSL certificate (Let's Encrypt)
+certbot certonly --standalone -d your-domain.com
+
+# Copy certificates
+cp /etc/letsencrypt/live/your-domain.com/fullchain.pem ./ssl/cert.pem
+cp /etc/letsencrypt/live/your-domain.com/privkey.pem ./ssl/key.pem
+
+# Start Nginx proxy
+docker-compose up -d nginx
+```
+
+### 4. Rate Limiting
+
+Nginx configuration includes:
+
+- **10 requests/second** per IP
+- **Burst of 20** requests
+- **Max 10 concurrent connections** per IP
+
+Adjust in `nginx.conf`:
+
+```nginx
+limit_req_zone $binary_remote_addr zone=mcp_limit:10m rate=10r/s;
 ```
 
 ---
 
-## 📦 Project Structure
+## 📊 Monitoring & Observability
 
+### Health Check Endpoint
+
+```bash
+# Simple health check
+curl https://your-server.com/health
+
+# Response
+{
+  "status": "healthy",
+  "service": "nephrology-rag-mcp",
+  "version": "1.0.0"
+}
 ```
-Nephrology-RAG-MCP-tool/
-├── README.md                    # Documentation
-├── LICENSE                      # MIT License
-├── requirements.txt             # Python dependencies
-├── rag_mcp_server.py           # Main MCP server
-├── test_fastmcp_client.py      # Client testing script
-├── Dockerfile                   # Container definition
-├── mcp.json                     # MCP tool manifest
-├── vector_store/                # Pre-built FAISS index
-│   └── index.faiss
-└── data/                        # Source documents (optional)
+
+### Server Info
+
+```bash
+# Get server status
+curl -X POST https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp \
+  -H "Authorization: Bearer YOUR_KEY" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+      "name": "get_server_info"
+    }
+  }'
+```
+
+### Session Management
+
+```bash
+# List active sessions (admin)
+curl -X POST https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp \
+  -H "Authorization: Bearer YOUR_KEY" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+      "name": "list_sessions"
+    }
+  }'
+```
+
+### Prometheus Metrics
+
+Access metrics at: `http://your-server:9090`
+
+**Key metrics to monitor:**
+
+- Request rate
+- Response time
+- Active sessions
+- Error rate
+- Memory usage
+
+### Logs
+
+**Docker logs:**
+
+```bash
+docker logs -f mcp-server
+```
+
+**Kubernetes logs:**
+
+```bash
+kubectl logs -f deployment/nephrology-rag-mcp -n mcp-server
+```
+
+**Filter for errors:**
+
+```bash
+kubectl logs -f deployment/nephrology-rag-mcp -n mcp-server | grep ERROR
 ```
 
 ---
 
-## 🔐 Configuration
+## 🎛️ Configuration Options
 
 ### Environment Variables
 
-| Variable            | Required | Default | Description          |
-| ------------------- | -------- | ------- | -------------------- |
-| `MISTRAL_API_KEY`   | ✅ Yes   | -       | Mistral AI API key   |
-| `MISTRALAI_API_KEY` | ⚠️ Alt   | -       | Alternative key name |
-| `PORT`              | ❌ No    | 8000    | Server port          |
+| Variable            | Required    | Default        | Description                            |
+| ------------------- | ----------- | -------------- | -------------------------------------- |
+| `MISTRALAI_API_KEY` | Yes         | -              | Mistral API key for embeddings         |
+| `MCP_API_KEY`       | Recommended | -              | API key for MCP authentication         |
+| `HOST`              | No          | `0.0.0.0`      | Server bind address                    |
+| `PORT`              | No          | `8000`         | Server port                            |
+| `ALLOWED_ORIGINS`   | No          | `*`            | CORS allowed origins (comma-separated) |
+| `VECTOR_STORE_PATH` | No          | `vector_store` | Path to FAISS index                    |
 
-### Security Best Practices
+### Client Headers
 
-✅ **DO:**
+| Header          | Required | Description                           |
+| --------------- | -------- | ------------------------------------- |
+| `Authorization` | Yes\*    | Bearer token for authentication       |
+| `X-Session-ID`  | No       | Session identifier for tracking       |
+| `Accept`        | No       | `text/event-stream` for SSE streaming |
 
-- Store API keys in environment variables or `.env` files
-- Add `.env` to `.gitignore`
-- Use HTTPS in production
-- Rotate keys regularly
-
-❌ **DON'T:**
-
-- Commit API keys to version control
-- Include quotes in `.env` values (use `KEY=value` not `KEY="value"`)
-- Share keys in issues or PRs
+\*Required if `MCP_API_KEY` is set
 
 ---
 
-## 🆘 Troubleshooting
+## 🧪 Testing & Validation
 
-### LangChain MCP Configuration Errors
+### 1. Test Health Endpoint
 
-#### Error: `ValidationError: 'transport' is a required property`
-
-**Cause:** The client-side MCP config omitted the standard `transport` field, or provided an incompatible transport value.
-
-**Solution:** Provide a `transport` key and set it to an appropriate value (for this server use `sse` or `streamable_http`). Example:
-
-```python
-# ✅ Correct (preferred)
-mcp_config = {
-  "mcpServers": {
-    "nephrology-rag": {
-      "transport": "sse",
-      "url": "https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp"
-    }
-  }
-}
-
-# ❌ Wrong (incompatible transport)
-mcp_config = {
-  "mcpServers": {
-    "nephrology-rag": {
-      "transport": "websocket",
-      "url": "https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp"
-    }
-  }
-}
+```bash
+curl https://your-server.com/health
 ```
 
-#### Error: `ValueError: Configuration error loading MCP tools`
+Expected: `{"status": "healthy", ...}`
 
-**Cause:** Usually due to:
+### 2. Test Authentication
 
-- Wrong transport type specified
-- Invalid server URL
-- API key not configured on the server side
+```bash
+# Without auth (should fail if enabled)
+curl -X POST https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp -d '{...}'
+
+# With auth (should succeed)
+curl -X POST https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp \
+  -H "Authorization: Bearer YOUR_KEY" \
+  -d '{...}'
+```
+
+### 3. Test Query
+
+```bash
+curl -X POST https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_KEY" \
+  -H "Accept: text/event-stream" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+      "name": "query_nephrology_docs",
+      "arguments": {
+        "query": "test query",
+        "k": 2
+      }
+    }
+  }'
+```
+
+### 4. Load Testing
+
+```bash
+# Install Apache Bench
+apt-get install apache2-utils
+
+# Test 1000 requests with 10 concurrent
+ab -n 1000 -c 10 \
+  -H "Authorization: Bearer YOUR_KEY" \
+  -p request.json \
+  -T "application/json" \
+  https://nephrology-mcp-server-923690924368.us-central1.run.app/mcp
+```
+
+---
+
+## 🔧 Troubleshooting
+
+### Issue: "Unauthorized" Error
+
+**Cause:** Missing or invalid API key
 
 **Solution:**
 
-1. Verify the server URL is correct (check deployment status)
-2. Ensure the MCP client config includes a correct `"transport"` key (e.g., `"sse"` or `"streamable_http"`)
-3. Ensure the deployed server has `MISTRAL_API_KEY` configured
-
-### `401 Unauthorized` from Mistral API
-
-**Solution:** Check API key configuration
-
 ```bash
-# Verify environment variable
-echo $MISTRAL_API_KEY
+# Verify API key is set
+echo $MCP_API_KEY
 
-# Ensure .env has no quotes
-cat .env  # Should be: MISTRAL_API_KEY=abc123xyz
+# Ensure clients use correct header
+Authorization: Bearer YOUR_ACTUAL_KEY
 ```
 
-### `Vector store not found`
+### Issue: CORS Errors
 
-**Solution:** Ensure `vector_store/` directory exists
+**Cause:** Origin not allowed
 
-```bash
-ls -la vector_store/index.faiss
-```
-
-### Connection timeout
-
-**Solution:** Service cold start - wait and retry
+**Solution:**
 
 ```bash
-sleep 30
-python test_fastmcp_client.py
+# Update ALLOWED_ORIGINS
+export ALLOWED_ORIGINS="https://claude.ai,https://your-domain.com"
+
+# Or allow all (development only)
+export ALLOWED_ORIGINS="*"
+```
+
+### Issue: "Vector store not initialized"
+
+**Cause:** FAISS index not loaded
+
+**Solution:**
+
+```bash
+# Check vector store exists
+ls -la vector_store/
+
+# Verify MISTRAL_API_KEY is set
+echo $MISTRALAI_API_KEY
+
+# Check server logs
+docker logs mcp-server | grep "Vector store"
+```
+
+### Issue: Slow Responses
+
+**Possible causes & solutions:**
+
+1. **Too many results:** Reduce `k` parameter
+2. **Cold start:** First request may be slower
+3. **Resource limits:** Increase container memory/CPU
+4. **Network latency:** Deploy closer to users
+
+### Issue: Connection Timeouts
+
+**Solution:**
+
+```nginx
+# Increase Nginx timeouts
+proxy_connect_timeout 300s;
+proxy_send_timeout 300s;
+proxy_read_timeout 300s;
 ```
 
 ---
 
-## 🤝 Contributing
+## 📈 Scaling Strategies
 
-Contributions are welcome! Please:
+### Horizontal Scaling
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes and test thoroughly
-4. Commit with clear messages (`git commit -m "feat: add amazing feature"`)
-5. Push and create a Pull Request
+**Docker Compose:**
 
-For bugs or feature requests, please [open an issue](https://github.com/wsmaisys/Nephrology-RAG-MCP-tool/issues).
+```bash
+docker-compose up -d --scale mcp-server=5
+```
 
----
+**Kubernetes:**
 
-## 📚 Resources
+```bash
+kubectl scale deployment nephrology-rag-mcp --replicas=5 -n mcp-server
+```
 
-- [Model Context Protocol Documentation](https://modelcontextprotocol.io/)
-- [FastMCP GitHub](https://github.com/jlowin/fastmcp)
-- [Mistral AI API Docs](https://docs.mistral.ai/)
-- [LangChain Documentation](https://python.langchain.com/)
-- [FAISS Documentation](https://github.com/facebookresearch/faiss)
+### Vertical Scaling
 
----
+**Increase resources:**
 
-## 📜 License
+```yaml
+resources:
+  limits:
+    memory: "4Gi"
+    cpu: "2000m"
+```
 
-This project is licensed under the MIT License - see [LICENSE](LICENSE) file for details.
+### Auto-Scaling
 
----
+**Kubernetes HPA is configured to:**
 
-## 👨‍💻 Contact
+- Min replicas: 2
+- Max replicas: 10
+- Scale at 70% CPU or 80% memory
 
-- **Developer:** [Wasim Ansari](https://github.com/wsmaisys)
-- **Email:** [wsmaisys@gmail.com](mailto:wsmaisys@gmail.com)
-- **LinkedIn:** [Wasim Ansari](https://linkedin.com/in/wasim-ansari)
+**AWS ECS:**
 
----
-
-## 🙌 Acknowledgments
-
-Built with contributions from:
-
-- Medical Literature: Comprehensive Clinical Nephrology textbooks
-- Vector Search: Facebook Research (FAISS)
-- LLM Infrastructure: Mistral AI
-- Protocol: MCP Specification
-- Framework: FastMCP Contributors
+- Target tracking on CPU (70%)
+- Automatic scaling between 2-10 tasks
 
 ---
 
-<div align="center">
+## 🎯 Best Practices
 
-### Built with ❤️ for Nephrology & Medical AI
+### 1. Security
 
-**[⬆ Back to Top](#-nephrology-rag-mcp-server)**
+- ✅ Always use HTTPS in production
+- ✅ Set strong `MCP_API_KEY`
+- ✅ Restrict CORS to specific origins
+- ✅ Enable rate limiting
+- ✅ Use secrets management (not env vars in production)
 
-</div>
+### 2. Reliability
+
+- ✅ Deploy at least 2 replicas
+- ✅ Configure health checks
+- ✅ Set up monitoring and alerts
+- ✅ Use load balancer
+- ✅ Implement circuit breakers
+
+### 3. Performance
+
+- ✅ Cache frequent queries
+- ✅ Use CDN for static assets
+- ✅ Deploy in multiple regions
+- ✅ Optimize vector store index
+- ✅ Monitor and optimize query patterns
+
+### 4. Operations
+
+- ✅ Centralized logging
+- ✅ Automated deployments
+- ✅ Infrastructure as Code
+- ✅ Disaster recovery plan
+- ✅ Regular security updates
+
+---
+
+## 📚 Additional Resources
+
+- **MCP Specification:** https://spec.modelcontextprotocol.io/
+- **FastMCP Docs:** https://github.com/jlowin/fastmcp
+- **Claude API:** https://docs.anthropic.com/
+- **SSE Protocol:** https://html.spec.whatwg.org/multipage/server-sent-events.html
+
+---
+
+## 💡 Support
+
+For production support:
+
+1. Check server logs
+2. Verify configuration
+3. Test with curl/httpie
+4. Review monitoring dashboards
+5. Contact your DevOps team
+
+Server is now ready for multi-user production deployment! 🚀
