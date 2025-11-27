@@ -5,10 +5,6 @@ FROM python:3.10-slim
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Cloud Run expects the app to listen on port 8080
-ENV PORT=8080
-ENV HOST=0.0.0.0
-
 # Create working directory
 WORKDIR /app
 
@@ -28,7 +24,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of your project (including vector store)
 COPY . /app/
 
-# Expose expected port
+# Expose expected port (8080 hardcoded in server)
 EXPOSE 8080
 
 # Health check - ensure container stays healthy
@@ -36,5 +32,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD curl -f http://localhost:8080/health || exit 1
 
 # Start your MCP server
-# The server will bind to 0.0.0.0:8080 as expected by Cloud Run
+# Server is hardcoded to listen on 0.0.0.0:8080
 CMD ["python", "rag_mcp_server.py"]
