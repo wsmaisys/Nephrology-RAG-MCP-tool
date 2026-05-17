@@ -1,55 +1,57 @@
 {
   "name": "Nephrology RAG MCP",
-  "description": "MCP server providing retrieval-augmented nephrology content.",
-  "version": "0.1.0",
+  "description": "Public MCP server providing retrieval-augmented nephrology education context.",
+  "version": "1.0.0",
+  "endpoint": "https://nephrology-rag-mcp-tool-785629432566.us-central1.run.app/mcp",
+  "transport": "streamable_http",
+  "auth": {
+    "required": false,
+    "notes": "The service is intentionally public. Mistral API keys are server-side deployment secrets and are never sent by clients."
+  },
+  "limits": {
+    "max_results_per_query": 10,
+    "max_query_chars": 1000
+  },
   "tools": [
     {
-      "name": "invoke",
-      "description": "Retrieve top-k relevant document chunks for a query (semantic search).",
-      "method": "invoke",
+      "name": "query_nephrology_docs",
+      "description": "Retrieve top-k relevant nephrology document chunks for a natural-language clinical education query.",
+      "method": "tools/call",
       "params": {
         "query": {
           "type": "string",
           "required": true,
-          "description": "Natural language search query"
+          "maxLength": 1000,
+          "description": "Natural-language nephrology query"
         },
         "k": {
           "type": "integer",
           "required": false,
           "default": 4,
-          "description": "Number of results to return"
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Number of document chunks to return"
+        },
+        "session_id": {
+          "type": "string",
+          "required": false,
+          "description": "Optional caller-provided session identifier"
         }
       },
       "returns": {
         "type": "object",
-        "description": "Search results with context and metadata"
+        "description": "JSON object with status, query, context, metadata, num_results, session_id, server, and tool"
       }
     },
     {
-      "name": "health",
-      "description": "Return basic service health and readiness information.",
-      "method": "health",
-      "params": {},
-      "returns": {
-        "type": "object",
-        "description": "Health status and vector store path"
-      }
+      "name": "get_server_info",
+      "description": "Return service metadata and readiness information.",
+      "method": "tools/call"
     }
   ],
-  "manifest": {
-    "mcp_endpoint": "/mcp",
-    "transport": "streamable_http",
-    "accept": ["application/json", "text/event-stream"],
-    "session_handling": [
-      "top-level 'session' field",
-      "params.session",
-      "X-FastMCP-Session header",
-      "session query parameter"
-    ],
-    "auth": {
-      "env_vars": ["MISTRALAI_API_KEY", "MISTRAL_API_KEY", "mistral_api_key"],
-      "notes": "Server expects Mistral API key set as environment variable. Clients should not send raw API keys in requests."
-    }
+  "integration": {
+    "mediflow_env_var": "NEPHROLOGY_MCP_URL",
+    "default_mediflow_url": "https://nephrology-rag-mcp-tool-785629432566.us-central1.run.app/mcp"
   },
   "contact": {
     "maintainer": "Wasim Ansari",

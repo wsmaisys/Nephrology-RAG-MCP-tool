@@ -14,3 +14,6 @@ numpy==1.26.4
 
 # HTTP client used internally by some LangChain components
 httpx==0.27.0
+
+# Local contract tests
+pytest==8.3.4

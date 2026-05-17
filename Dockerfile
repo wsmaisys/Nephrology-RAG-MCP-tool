@@ -24,7 +24,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of your project (including vector store)
 COPY . /app/
 
-# Expose expected port (8000 hardcoded in server)
+# Expose the local default port. Cloud Run provides PORT at runtime.
 EXPOSE 8000
 
 # Health check - ensure container stays healthy
@@ -32,5 +32,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD curl -f http://localhost:8000/health || exit 1
 
 # Start your MCP server
-# Server is hardcoded to listen on 0.0.0.0:8000
 CMD ["python", "rag_mcp_server.py"]

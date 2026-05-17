@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 rag_mcp_server.py
 
@@ -30,6 +30,12 @@ APP_NAME = "nephrology-rag-mcp"
 APP_VERSION = "1.0.0"
 VECTOR_STORE_PATH = "vector_store"
 DEFAULT_K = int(os.environ.get("DEFAULT_K", "4"))
+MAX_K = int(os.environ.get("MAX_K", "10"))
+MAX_QUERY_CHARS = int(os.environ.get("MAX_QUERY_CHARS", "1000"))
+PUBLIC_BASE_URL = os.environ.get(
+    "PUBLIC_BASE_URL",
+    "https://nephrology-rag-mcp-tool-785629432566.us-central1.run.app",
+).rstrip("/")
 
 # Load .env for local development (if present)
 try:
@@ -74,9 +80,9 @@ async def lifespan(app: FastAPI):
 # FastAPI app (MCP server)
 # ---------------------------
 app = FastAPI(title=APP_NAME, version=APP_VERSION, lifespan=lifespan)
-# Allow all CORS (no authentication by design)
+# Public knowledge service: allow browser and MCP clients by default.
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], 
-                   allow_headers=["*"], allow_credentials=True)
+                   allow_headers=["*"], allow_credentials=False)
 
 # ---------------------------
 # In-memory state
@@ -251,6 +257,39 @@ def tool(name: str):
         return fn
     return deco
 
+def _tool_schema(name: str, description: str, input_schema: Dict[str, Any]) -> Dict[str, Any]:
+    return {"name": name, "description": description, "input_schema": input_schema}
+
+def _public_tools() -> List[Dict[str, Any]]:
+    return [
+        _tool_schema(
+            "query_nephrology_docs",
+            "Retrieve top-k nephrology document chunks for a natural-language clinical education query.",
+            {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "maxLength": MAX_QUERY_CHARS},
+                    "k": {"type": "integer", "default": DEFAULT_K, "minimum": 1, "maximum": MAX_K},
+                    "session_id": {"type": "string"},
+                },
+                "required": ["query"],
+            },
+        ),
+        _tool_schema("get_server_info", "Return service metadata and readiness.", {"type": "object", "properties": {}}),
+    ]
+
+def _public_manifest() -> Dict[str, Any]:
+    return {
+        "name": "Nephrology RAG MCP",
+        "description": "Public MCP server providing retrieval-augmented nephrology education context.",
+        "version": APP_VERSION,
+        "endpoint": f"{PUBLIC_BASE_URL}/mcp",
+        "transport": "streamable_http",
+        "auth": {"required": False},
+        "limits": {"max_results_per_query": MAX_K, "max_query_chars": MAX_QUERY_CHARS},
+        "tools": _public_tools(),
+    }
+
 @tool("query_nephrology_docs")
 async def query_nephrology_docs(params: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -259,11 +298,13 @@ async def query_nephrology_docs(params: Dict[str, Any]) -> Dict[str, Any]:
     Does NOT include 'transport' in the response.
     """
     query = params.get("query") or params.get("q") or ""
-    k = int(params.get("k", DEFAULT_K))
+    k = max(1, min(int(params.get("k", DEFAULT_K)), MAX_K))
     session_id = params.get("session_id")
 
     if not query:
         return {"status": "error", "message": "Missing 'query' parameter."}
+    if len(query) > MAX_QUERY_CHARS:
+        return {"status": "error", "message": f"Query is too long. Maximum length is {MAX_QUERY_CHARS} characters."}
     if _retriever is None:
         return {"status": "error", "message": "Vector store not initialized."}
 
@@ -296,7 +337,10 @@ async def query_nephrology_docs(params: Dict[str, Any]) -> Dict[str, Any]:
         "context": context,
         "metadata": metadata,
         "num_results": len(context),
-        "session_id": sid
+        "session_id": sid,
+        "server": APP_NAME,
+        "tool": "query_nephrology_docs",
+        "usage_note": "Educational retrieval context only; not a medical diagnosis or treatment recommendation.",
     }
 
 @tool("get_server_info")
@@ -312,21 +356,10 @@ async def get_server_info(params: Dict[str, Any]) -> Dict[str, Any]:
         "retriever_initialized": _retriever is not None,
         "active_sessions": len(_sessions),
         "session_info": info,
-        "capabilities": {"streaming": True, "multi_user": True, "max_results_per_query": 50}
-    }
-
-@tool("list_sessions")
-async def list_sessions(params: Dict[str, Any]) -> Dict[str, Any]:
-    """List active sessions."""
-    return {
-        "status": "success",
-        "active_sessions": len(_sessions),
-        "sessions": [
-            {"session_id": sid, 
-             "query_count": s.get("query_count"), 
-             "last_query": s.get("last_query")}
-            for sid, s in _sessions.items()
-        ]
+        "public_base_url": PUBLIC_BASE_URL,
+        "mcp_endpoint": f"{PUBLIC_BASE_URL}/mcp",
+        "capabilities": {"streaming": True, "multi_user": True, "max_results_per_query": MAX_K, "max_query_chars": MAX_QUERY_CHARS},
+        "usage_note": "Educational retrieval context only; not a medical diagnosis or treatment recommendation.",
     }
 
 async def _invoke_tool(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -358,8 +391,14 @@ async def _stream_query_nephrology_docs(args: Dict[str, Any]) -> AsyncGenerator[
     Sends status:start, chunk events, then status:completed.
     """
     query = args.get("query") or ""
-    k = int(args.get("k", DEFAULT_K))
+    k = max(1, min(int(args.get("k", DEFAULT_K)), MAX_K))
     session_id = args.get("session_id")
+    if not query:
+        yield sse_format(json.dumps({"status": "error", "message": "Missing 'query' parameter."}), event="mcp.error").encode("utf-8")
+        return
+    if len(query) > MAX_QUERY_CHARS:
+        yield sse_format(json.dumps({"status": "error", "message": f"Query is too long. Maximum length is {MAX_QUERY_CHARS} characters."}), event="mcp.error").encode("utf-8")
+        return
     sid = _create_session(session_id)
     _update_session(sid, query)
 
@@ -379,7 +418,7 @@ async def _stream_query_nephrology_docs(args: Dict[str, Any]) -> AsyncGenerator[
             else:
                 content = getattr(doc, "page_content", "") or getattr(doc, "content", "") or str(doc)
                 meta = getattr(doc, "metadata", {})
-            payload = {"index": idx, "content": content, "metadata": meta, "session_id": sid}
+            payload = {"index": idx, "content": content, "metadata": meta, "session_id": sid, "tool": "query_nephrology_docs"}
             yield sse_format(json.dumps(payload), event="mcp.chunk", id=str(idx)).encode("utf-8")
             await asyncio.sleep(0.01)  # small pause for client processing
 
@@ -416,14 +455,30 @@ async def _stream_tool_invocation(tool_name: str, args: Dict[str, Any]) -> Async
 @app.get("/health")
 async def health():
     """Health check endpoint."""
-    return {"status": "ok", "ready": _retriever is not None}
+    return {"status": "ok", "ready": _retriever is not None, "server": APP_NAME}
+
+@app.get("/ready")
+async def ready():
+    """Readiness endpoint for clients that require vector-store availability."""
+    status_code = 200 if _retriever is not None else 503
+    return JSONResponse(
+        status_code=status_code,
+        content={"status": "ready" if _retriever is not None else "not_ready", "server": APP_NAME},
+    )
 
 @app.get("/")
 async def root():
     """Root endpoint with basic info."""
     return {"server": APP_NAME, "version": APP_VERSION,
             "transport": "http/sse", 
-            "status": "ready" if _retriever is not None else "starting"}
+            "status": "ready" if _retriever is not None else "starting",
+            "mcp_endpoint": "/mcp",
+            "tools": list(TOOLS.keys())}
+
+@app.get("/mcp.json")
+async def mcp_manifest():
+    """Public manifest describing the MCP service contract."""
+    return _public_manifest()
 
 @app.post("/mcp")
 async def mcp_endpoint(request: Request, 
@@ -448,14 +503,18 @@ async def mcp_endpoint(request: Request,
     # Discovery (tool list)
     if method == "mcp.discover":
         meta = {
-            "name": APP_NAME, "version": APP_VERSION,
-            "transport": "http/sse", "tools": list(TOOLS.keys())
+            "name": APP_NAME,
+            "version": APP_VERSION,
+            "transport": "http/sse",
+            "endpoint": f"{PUBLIC_BASE_URL}/mcp",
+            "auth": {"required": False},
+            "tools": _public_tools(),
         }
         return JSONResponse(content={"jsonrpc": "2.0", "id": req_id, "result": meta})
 
     # Support simple tools listing via `tools/list`
     if method == "tools/list":
-        meta = {"tools": list(TOOLS.keys())}
+        meta = {"tools": _public_tools()}
         return JSONResponse(content={"jsonrpc": "2.0", "id": req_id, "result": meta})
 
     if method != "tools/call":

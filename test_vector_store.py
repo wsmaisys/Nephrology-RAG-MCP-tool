@@ -17,6 +17,7 @@ Purpose:
 import json
 import uuid
 import time
+import os
 import requests
 from requests.exceptions import RequestException
 
@@ -30,9 +31,10 @@ except Exception:
 # -----------------------------------------------------
 # CONFIGURATION
 # -----------------------------------------------------
-#MCP_URL = "http://localhost:8000/mcp"
-MCP_URL = "http:// http://0.0.0.0:8000/mcp"
-#MCP_URL = "https://nephrology-rag-mcp-tool-785629432566.us-central1.run.app/mcp"   # <-- change ONLY if needed
+MCP_URL = os.getenv(
+    "NEPHROLOGY_MCP_URL",
+    "https://nephrology-rag-mcp-tool-785629432566.us-central1.run.app/mcp",
+)
 TIMEOUT = 30
 
 # -----------------------------------------------------
