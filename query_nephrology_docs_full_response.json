@@ -1,0 +1,37 @@
+{
+    "jsonrpc":  "2.0",
+    "id":  "query-full",
+    "result":  {
+                   "status":  "success",
+                   "query":  "acute kidney injury management",
+                   "context":  [
+                                   "should receive IV hydration with crystalloid solution. The bene î??t of \nstatins and RIPC is controversial. To prevent TLS, patients at inter-\nmediate and high risk should receive aggressive hydration with crys-\ntalloid solutions. A xanthine oxidase inhibitor or rasburicase should \nbe administered depending on the underlying risk and uric acid levels. \nFor rhabdomyolysis, normal saline is preferable. Additional studies are \nrequired to assess whether fenoldopam, certain vasopressors, nesirit-\nide, and statins are beneî??cial to prevent AKI.\nTREATMENT OF ACUTE KIDNEY INJURY\nOnce measures to prevent AKI have failed, a key question is whether \nAKI can be managed with nondialytic therapy alone or if KRT is neces-\nsary (see Chapter 75). Management of AKI in liver failure is discussed \nin Chapter 76.\nGeneral Management\nAppropriate management requires timely diagnosis of the clinical con-\ndition. Considerable effort and investment have been directed in the",
+                                   "in Chapter 76.\nGeneral Management\nAppropriate management requires timely diagnosis of the clinical con-\ndition. Considerable effort and investment have been directed in the \nsearch for a more sensitive and speci î??c biomarker to diagnose AKI. \nInitial management of AKI includes assessment of the cause and vol-\nume status. Adequate hemodynamic status should be maintained to \nensure kidney perfusion and avoid further kidney injury. In the injured \nkidney, autoregulation of blood î??ow, the mechanism responsible for \nmaintaining a constant î?? ow during î?? uctuations in BP, is lost. This \nloss increases the susceptibility to develop AKI after episodes of hypo-\ntension. Therefore, î??uid and vasoactive drug management is needed \nin both patients at risk for AKI and with AKI. In patients with AKI \nattributed to dehydration only, it is expected that the serum creatinine \ndecreases after the administration of 1 to 3 L of isotonic î??uid over 24"
+                               ],
+                   "metadata":  [
+                                    {
+                                        "producer":  "PyPDF2",
+                                        "creator":  "PyPDF",
+                                        "creationdate":  "",
+                                        "source":  "comprehensive-clinical-nephrology.pdf",
+                                        "total_pages":  1469,
+                                        "page":  988,
+                                        "page_label":  "989"
+                                    },
+                                    {
+                                        "producer":  "PyPDF2",
+                                        "creator":  "PyPDF",
+                                        "creationdate":  "",
+                                        "source":  "comprehensive-clinical-nephrology.pdf",
+                                        "total_pages":  1469,
+                                        "page":  988,
+                                        "page_label":  "989"
+                                    }
+                                ],
+                   "num_results":  2,
+                   "session_id":  "b112d7c6-69a1-45af-a5d3-e0f3a896fb75",
+                   "server":  "nephrology-rag-mcp",
+                   "tool":  "query_nephrology_docs",
+                   "usage_note":  "Educational retrieval context only; not a medical diagnosis or treatment recommendation."
+               }
+}
